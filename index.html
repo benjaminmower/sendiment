@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sendiment</title>
+<style>
+:root{
+  --water-top:#eef4f6; --water-deep:#d7e4ea; --ink:#2c3a40; --ink-soft:#6b7d85;
+  --pebble-bg:#fbfdfe; --pebble-edge:#b9c9d1; --ripple:#1d9e75; --bar:#f6fafb;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --water-top:#0d1a20; --water-deep:#060e13; --ink:#d6e2e8; --ink-soft:#7d929c;
+    --pebble-bg:#152730; --pebble-edge:#2e4652; --ripple:#2bbd8f; --bar:#0f1e25;
+  }
+}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{
+  background:var(--water-deep);
+  background:linear-gradient(var(--water-top),var(--water-deep));
+  color:var(--ink); font-family:system-ui,sans-serif; overflow:hidden;
+}
+#river{position:fixed; inset:0 0 74px 0; overflow:hidden}
+.pebble{
+  position:absolute; max-width:min(300px,72vw); padding:10px 18px;
+  background:var(--pebble-bg); border:1px solid var(--pebble-edge);
+  border-radius:20px; font:italic 15px/1.55 Georgia,'Times New Roman',serif;
+  cursor:pointer; user-select:none; -webkit-user-select:none;
+  transition:transform .5s ease, border-color .5s, opacity .8s; will-change:top;
+}
+.pebble.skipped{border-color:var(--ripple)}
+#bar{
+  position:fixed; left:0; right:0; bottom:0; height:74px; background:var(--bar);
+  border-top:1px solid var(--pebble-edge); display:flex; gap:10px;
+  align-items:center; padding:0 14px;
+}
+#thought{
+  flex:1; height:44px; padding:0 16px; border-radius:22px;
+  border:1px solid var(--pebble-edge); background:var(--pebble-bg); color:var(--ink);
+  font:italic 15px Georgia,serif; outline:none;
+}
+#thought::placeholder{color:var(--ink-soft)}
+#castBtn{
+  height:44px; padding:0 22px; border-radius:22px; border:none;
+  background:var(--ink); color:var(--water-top); font:600 14px system-ui,sans-serif;
+  cursor:pointer;
+}
+#castBtn:disabled{opacity:.4; cursor:default}
+#note{
+  position:fixed; top:12px; left:0; right:0; text-align:center;
+  font-size:12px; color:var(--ink-soft); pointer-events:none;
+}
+.sinker{
+  position:fixed; left:50%; transform:translateX(-50%); bottom:86px;
+  font:italic 15px Georgia,serif; color:var(--ink-soft);
+  animation:sink 1.6s ease-in forwards; pointer-events:none; max-width:72vw;
+}
+@keyframes sink{to{transform:translateX(-50%) translateY(46vh) scale(.55); opacity:0}}
+@media (prefers-reduced-motion: reduce){ .sinker{animation:none; opacity:0} }
+</style>
+</head>
+<body>
+<div id="note"></div>
+<div id="river" aria-live="off"></div>
+<div id="bar">
+  <input id="thought" maxlength="280" placeholder="cast a thought — it sinks and is gone" aria-label="Cast a thought">
+  <button id="castBtn">cast</button>
+</div>
+
+<script type="module">
+import { expiresAt, sizeOf, speedOf } from './physics.js';
+
+/* ------------------------------------------------------------------
+   Point this at your deployed worker, e.g.
+     const API = 'https://sendiment.yourname.workers.dev';
+   Leave it empty ('') to run the local demo river with no backend.
+------------------------------------------------------------------ */
+const API = '';
+
+const river = document.getElementById('river');
+const note = document.getElementById('note');
+const input = document.getElementById('thought');
+const castBtn = document.getElementById('castBtn');
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k,v) => { try { localStorage.setItem(k,v); } catch {} };
+
+let device = lsGet('snd_device');
+if (!device) { device = crypto.randomUUID(); lsSet('snd_device', device); }
+
+const loadSet = k => { try { return new Set(JSON.parse(lsGet(k) || '[]')); } catch { return new Set(); } };
+const saveSet = (k,s) => lsSet(k, JSON.stringify([...s].slice(-100)));
+const ownIds = loadSet('snd_own');
+const skippedIds = loadSet('snd_skipped');
+
+const ambient = [
+  "after watching the odyssey last night I feel really bad for the cyclops",
+  "every parking lot was once a field",
+  "I left a window open in 2009",
+  "the moon has been following me since I was six",
+  "somewhere someone is having the best day of their life right now",
+  "escalators are just stairs that believe in you",
+  "I miss people I've never met",
+  "my grandmother's kitchen smelled like this exact rain",
+  "we never say goodbye to a year, only hello to the next one",
+  "the sea doesn't know it has a name"
+];
+let ambientIdx = Math.floor(Math.random() * ambient.length);
+
+const falling = [];
+const queue = [];
+const queued = new Set();
+const shown = new Set();
+let cursor = 0;
+
+function spawn(pebble) {
+  const el = document.createElement('div');
+  el.className = 'pebble';
+  el.textContent = pebble.body;
+  el.style.left = (6 + Math.random() * 54) + '%';
+  const p = { id: pebble.id, el, y: -70, skips: pebble.skips || 0 };
+  p.speed = speedOf(p.skips) * (0.9 + Math.random() * 0.25);
+  el.style.transform = `scale(${sizeOf(p.skips).toFixed(2)})`;
+  if (skippedIds.has(p.id)) el.classList.add('skipped');
+  el.addEventListener('click', () => doSkip(p));
+  river.appendChild(el);
+
+  if (reduced) {
+    el.style.top = (10 + Math.random() * 60) + '%';
+    el.style.opacity = '0';
+    requestAnimationFrame(() => { el.style.opacity = '1'; });
+    setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 900); }, 9000);
+  } else {
+    falling.push(p);
+  }
+}
+
+function doSkip(p) {
+  if (!p.id || skippedIds.has(p.id) || ownIds.has(p.id)) return;
+  skippedIds.add(p.id); saveSet('snd_skipped', skippedIds);
+  p.skips += 1;
+  p.el.classList.add('skipped');
+  p.el.style.transform = `scale(${sizeOf(p.skips).toFixed(2)})`;
+  p.speed = speedOf(p.skips);
+  if (API) {
+    fetch(API + '/skip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: p.id, device })
+    }).catch(() => {});
+  }
+}
+
+let last = performance.now();
+function tick(now) {
+  const dt = Math.min((now - last) / 1000, 0.05);
+  last = now;
+  const h = river.clientHeight;
+  for (let i = falling.length - 1; i >= 0; i--) {
+    const p = falling[i];
+    p.y += p.speed * dt;
+    p.el.style.top = p.y + 'px';
+    if (p.y > h - 120) p.el.style.opacity = String(Math.max(0, 1 - (p.y - (h - 120)) / 110));
+    if (p.y > h) { p.el.remove(); falling.splice(i, 1); }
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+setInterval(() => {
+  if (queue.length) {
+    const next = queue.shift();
+    queued.delete(next.id);
+    if (!shown.has(next.id)) { shown.add(next.id); spawn(next); }
+  } else if (!API) {
+    spawn({ id: 'local-' + Math.random(), body: ambient[ambientIdx++ % ambient.length], skips: 0 });
+  }
+}, 3200);
+
+async function poll() {
+  try {
+    const res = await fetch(`${API}/river?after=${cursor}&limit=60`);
+    if (!res.ok) return;
+    const data = await res.json();
+    for (const p of data.pebbles) {
+      if (p.ts > cursor) cursor = p.ts;
+      if (ownIds.has(p.id) || shown.has(p.id) || queued.has(p.id)) continue;
+      if (expiresAt(p.ts, p.skips) <= Date.now()) continue;
+      queued.add(p.id);
+      queue.push(p);
+    }
+  } catch {}
+}
+
+async function cast() {
+  const body = input.value.trim();
+  if (!body) return;
+  castBtn.disabled = true;
+
+  const ghost = document.createElement('div');
+  ghost.className = 'sinker';
+  ghost.textContent = body;
+  document.body.appendChild(ghost);
+  setTimeout(() => ghost.remove(), 1700);
+  input.value = '';
+
+  if (!API) {
+    const n = (parseInt(lsGet('snd_released') || '0', 10) || 0) + 1;
+    lsSet('snd_released', String(n));
+    note.textContent = `you have released ${n === 1 ? 'one thought' : n + ' thoughts'}`;
+    castBtn.disabled = false;
+    input.focus();
+    return;
+  }
+
+  try {
+    const res = await fetch(API + '/cast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body, device })
+    });
+    const data = await res.json();
+    if (res.ok && data.id) {
+      ownIds.add(data.id);
+      saveSet('snd_own', ownIds);
+      note.textContent = '';
+    } else if (res.status === 429) {
+      note.textContent = 'the river is full for you today';
+    } else if (res.status === 503) {
+      note.textContent = 'the river is running fast — try in a moment';
+    } else {
+      note.textContent = 'the river didn\u2019t take it';
+    }
+  } catch {
+    note.textContent = 'the river didn\u2019t take it';
+  }
+  setTimeout(() => { if (note.textContent.startsWith('the river')) note.textContent = ''; }, 4000);
+  castBtn.disabled = false;
+  input.focus();
+}
+
+castBtn.addEventListener('click', cast);
+input.addEventListener('keydown', e => { if (e.key === 'Enter') cast(); });
+
+if (API) {
+  poll();
+  setInterval(poll, 5000);
+} else {
+  note.textContent = 'local demo — pebbles cast here sink on this device and are gone';
+}
+</script>
+</body>
+</html>

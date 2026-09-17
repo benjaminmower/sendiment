@@ -1,0 +1,15 @@
+name = "sendiment"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# Fill database_id with the value printed by:
+#   wrangler d1 create sendiment
+[[d1_databases]]
+binding = "DB"
+database_name = "sendiment"
+database_id = "e83d331a-f939-46ca-9de5-84daa66509a3"
+
+# Nightly housekeeping: prunes rate-limit rows and pebbles past any
+# possible lifespan. Remove this block if you would rather keep everything.
+[triggers]
+crons = ["0 9 * * *"]
