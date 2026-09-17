@@ -121,7 +121,7 @@ function spawn(pebble) {
   const el = document.createElement('div');
   el.className = 'pebble';
   el.textContent = pebble.body;
-  el.style.left = (6 + Math.random() * 54) + '%';
+  el.style.left = (6 + Math.random() * 88) + '%';
   const p = { id: pebble.id, el, y: -70, skips: pebble.skips || 0 };
   p.speed = speedOf(p.skips) * (0.9 + Math.random() * 0.25);
   el.style.transform = `scale(${sizeOf(p.skips).toFixed(2)})`;
@@ -202,14 +202,15 @@ async function cast() {
   if (!body) return;
   castBtn.disabled = true;
 
-  const ghost = document.createElement('div');
-  ghost.className = 'sinker';
-  ghost.textContent = body;
-  document.body.appendChild(ghost);
-  setTimeout(() => ghost.remove(), 1700);
   input.value = '';
 
   if (!API) {
+    const ghost = document.createElement('div');
+    ghost.className = 'sinker';
+    ghost.textContent = body;
+    document.body.appendChild(ghost);
+    setTimeout(() => ghost.remove(), 1700);
+
     const n = (parseInt(lsGet('snd_released') || '0', 10) || 0) + 1;
     lsSet('snd_released', String(n));
     note.textContent = `you have released ${n === 1 ? 'one thought' : n + ' thoughts'}`;
@@ -238,6 +239,8 @@ async function cast() {
     if (res.ok && data.id) {
       ownIds.add(data.id);
       saveSet('snd_own', ownIds);
+      shown.add(data.id);
+      spawn({ id: data.id, body, ts: data.ts, skips: 0 });
       note.textContent = '';
     } else if (res.status === 429) {
       note.textContent = 'the river is full for you today';
