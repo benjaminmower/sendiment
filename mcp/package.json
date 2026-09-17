@@ -1,0 +1,14 @@
+{
+  "name": "sendiment-mcp",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.134.0"
+  }
+}

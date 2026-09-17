@@ -2,9 +2,9 @@
  * Sendiment river relay.
  *
  * Three endpoints:
- *   POST /cast   { body, device }        -> { id, ts }
- *   POST /skip   { ref, device }         -> { ok: true }
- *   GET  /river?after=<ms>&limit=<n>     -> { pebbles: [...], now }
+ *   POST /cast   { body, device, source? } -> { id, ts }
+ *   POST /skip   { ref, device }           -> { ok: true }
+ *   GET  /river?after=<ms>&limit=<n>       -> { pebbles: [...], now }
  *
  * Design notes:
  *  - Physics (lifespan, size) is computed client-side from ts + skip count,
@@ -48,6 +48,10 @@ function cleanDevice(d) {
   return v.length >= 8 ? v : null;
 }
 
+function cleanSource(s) {
+  return s === "ai" ? "ai" : "human";
+}
+
 function cleanBody(b) {
   if (typeof b !== "string") return null;
   // Strip control chars except newline, collapse runs of whitespace.
@@ -72,6 +76,7 @@ async function cast(request, env) {
 
   const device = cleanDevice(payload.device);
   const body = cleanBody(payload.body);
+  const source = cleanSource(payload.source);
   if (!device) return json({ error: "bad_device" }, 400);
   if (!body) return json({ error: "bad_body" }, 400);
 
@@ -90,8 +95,8 @@ async function cast(request, env) {
 
   const id = crypto.randomUUID();
   await env.DB.batch([
-    env.DB.prepare("INSERT INTO pebbles (id, body, ts, device) VALUES (?, ?, ?, ?)")
-      .bind(id, body, now, device),
+    env.DB.prepare("INSERT INTO pebbles (id, body, ts, device, source) VALUES (?, ?, ?, ?, ?)")
+      .bind(id, body, now, device, source),
     env.DB.prepare("INSERT INTO actions (device, kind, ts) VALUES (?, 'cast', ?)")
       .bind(device, now),
   ]);
@@ -142,7 +147,7 @@ async function river(request, env) {
   // Pull recent pebbles with their skip counts. Expiry is computed client-side
   // from ts + skips; we bound the query generously and let physics decide.
   const { results } = await env.DB.prepare(`
-    SELECT p.id, p.body, p.ts, COUNT(s.ref) AS skips
+    SELECT p.id, p.body, p.ts, p.source, COUNT(s.ref) AS skips
     FROM pebbles p
     LEFT JOIN skips s ON s.ref = p.id
     WHERE p.hidden = 0 AND p.ts > ? AND p.ts > ?

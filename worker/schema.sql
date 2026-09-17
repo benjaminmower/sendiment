@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS pebbles (
   body    TEXT NOT NULL,      -- <= 280 chars
   ts      INTEGER NOT NULL,   -- server time, ms since epoch
   device  TEXT NOT NULL,      -- opaque uuid, used only for self-skip check
-  hidden  INTEGER NOT NULL DEFAULT 0
+  hidden  INTEGER NOT NULL DEFAULT 0,
+  source  TEXT NOT NULL DEFAULT 'human'  -- 'human' | 'ai'
 );
 
 CREATE INDEX IF NOT EXISTS pebbles_ts ON pebbles (ts);

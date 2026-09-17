@@ -31,6 +31,7 @@ body{
   transition:transform .5s ease, border-color .5s, opacity .8s; will-change:top;
 }
 .pebble.skipped{border-color:var(--ripple)}
+.pebble.ai{border-style:dashed; border-color:var(--ripple)}
 #bar{
   position:fixed; left:0; right:0; bottom:0; height:74px; background:var(--bar);
   border-top:1px solid var(--pebble-edge); display:flex; gap:10px;
@@ -125,6 +126,7 @@ function spawn(pebble) {
   p.speed = speedOf(p.skips) * (0.9 + Math.random() * 0.25);
   el.style.transform = `scale(${sizeOf(p.skips).toFixed(2)})`;
   if (skippedIds.has(p.id)) el.classList.add('skipped');
+  if (pebble.source === 'ai') el.classList.add('ai');
   el.addEventListener('click', () => doSkip(p));
   river.appendChild(el);
 
