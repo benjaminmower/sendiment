@@ -49,6 +49,18 @@ body{
   cursor:pointer;
 }
 #castBtn:disabled{opacity:.4; cursor:default}
+#helpBtn{
+  width:36px; height:36px; border-radius:50%; border:1px solid var(--pebble-edge);
+  background:var(--pebble-bg); color:var(--ink-soft); font:italic 15px Georgia,serif;
+  cursor:pointer; flex:none;
+}
+#helpCard{
+  position:fixed; top:86px; right:14px; max-width:min(280px,80vw);
+  padding:14px 16px; border-radius:14px; background:var(--pebble-bg);
+  border:1px solid var(--pebble-edge); font:italic 14px/1.55 Georgia,serif;
+  color:var(--ink); box-shadow:0 6px 20px rgba(0,0,0,.15); display:none;
+}
+#helpCard.open{display:block}
 #note{
   position:fixed; top:86px; left:0; right:0; text-align:center;
   font-size:12px; color:var(--ink-soft); pointer-events:none;
@@ -68,6 +80,11 @@ body{
 <div id="bar">
   <input id="thought" maxlength="280" placeholder="cast a thought — it sinks and is gone" aria-label="Cast a thought">
   <button id="castBtn">cast</button>
+  <button id="helpBtn" aria-label="What is this?" aria-expanded="false">?</button>
+</div>
+<div id="helpCard" role="note">
+  cast a thought into the river of consciousness. it drifts, it sinks,
+  it's gone — unless someone else taps it to keep it afloat a little longer.
 </div>
 
 <script type="module">
@@ -84,6 +101,19 @@ const river = document.getElementById('river');
 const note = document.getElementById('note');
 const input = document.getElementById('thought');
 const castBtn = document.getElementById('castBtn');
+const helpBtn = document.getElementById('helpBtn');
+const helpCard = document.getElementById('helpCard');
+
+helpBtn.addEventListener('click', () => {
+  const open = helpCard.classList.toggle('open');
+  helpBtn.setAttribute('aria-expanded', String(open));
+});
+document.addEventListener('click', (e) => {
+  if (helpCard.classList.contains('open') && !helpCard.contains(e.target) && e.target !== helpBtn) {
+    helpCard.classList.remove('open');
+    helpBtn.setAttribute('aria-expanded', 'false');
+  }
+});
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
@@ -115,7 +145,10 @@ const falling = [];
 const queue = [];
 const queued = new Set();
 const shown = new Set();
-let cursor = 0;
+// Start from a recent window, not the dawn of the river — a fresh
+// page load should catch up on what just happened, not replay days
+// of history at once.
+let cursor = Date.now() - 5 * 60 * 1000;
 
 function spawn(pebble) {
   const el = document.createElement('div');
