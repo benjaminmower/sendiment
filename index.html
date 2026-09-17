@@ -218,12 +218,22 @@ async function cast() {
     return;
   }
 
+  const doCast = () => fetch(API + '/cast', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body, device })
+  });
+
   try {
-    const res = await fetch(API + '/cast', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ body, device })
-    });
+    let res;
+    try {
+      res = await doCast();
+      // A transient edge blip on a fresh subdomain can 404 a request that
+      // never reached the worker at all; one silent retry papers over it.
+      if (!res.ok && res.status !== 429 && res.status !== 503) res = await doCast();
+    } catch {
+      res = await doCast();
+    }
     const data = await res.json();
     if (res.ok && data.id) {
       ownIds.add(data.id);
