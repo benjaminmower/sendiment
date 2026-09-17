@@ -21,6 +21,21 @@ npx serve .
 Open the printed URL. `index.html` uses an ES module import, so it needs
 a real HTTP server — opening the file directly (`file://`) won't work.
 
+## Privacy and abuse
+
+No accounts, no names, no email. The client keeps a random id in your
+browser so you can't lift your own thought; the river stores it beside
+each pebble for 30 days and never returns it to anyone. Rate limits use
+a salted, daily-rotating hash of your IP that is swept after two days.
+The IP itself is never stored.
+
+The river refuses links, @handles, phone numbers, repeated thoughts and
+a short blocklist, and lowers shouting to a murmur. Everything else that
+gets cast is someone else's thought, not the operator's. If something is
+in the river that shouldn't be, [open an issue](https://github.com/benjaminmower/sendiment/issues)
+and it will be taken out. The full list of limits, and the moderation
+endpoint, are in [`worker/README.md`](worker/README.md).
+
 ## Files
 
 - `index.html` — the client: layout, animation loop, cast/skip UI

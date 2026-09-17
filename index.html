@@ -61,6 +61,11 @@ body{
   color:var(--ink); box-shadow:0 6px 20px rgba(0,0,0,.15); display:none;
 }
 #helpCard.open{display:block}
+#helpCard small{
+  display:block; margin-top:10px; padding-top:10px; border-top:1px solid var(--pebble-edge);
+  font-size:12px; color:var(--ink-soft); font-style:normal;
+}
+#helpCard a{color:var(--ripple)}
 #note{
   position:fixed; top:86px; left:0; right:0; text-align:center;
   font-size:12px; color:var(--ink-soft); pointer-events:none;
@@ -85,6 +90,12 @@ body{
 <div id="helpCard" role="note">
   cast a thought into the river of consciousness. it drifts, it sinks,
   it's gone — unless someone else taps it to keep it afloat a little longer.
+  <small>
+    no accounts. a random id lives in your browser so you can't lift your own
+    thought; it's kept a month, then gone. the river carries no links, no
+    phone numbers, no names to look up. something here that shouldn't be?
+    <a href="https://github.com/benjaminmower/sendiment/issues" target="_blank" rel="noopener">say so</a>.
+  </small>
 </div>
 
 <script type="module">
@@ -215,10 +226,39 @@ setInterval(() => {
   }
 }, 3200);
 
+/* ------------------------------------------------------------------
+   Polling that breathes with the river.
+
+   Fast while things are happening, slower as the water goes quiet,
+   asleep entirely while the tab is hidden. Any new pebble — or a cast
+   of your own — snaps it back to the fast rate. Each open tab costs
+   the worker a few hundred requests a day instead of seventeen
+   thousand, and a Reddit spike stays inside the free tier.
+------------------------------------------------------------------ */
+const POLL_FAST = 12000;
+const POLL_SLOW = 60000;
+let pollDelay = POLL_FAST;
+let pollTimer = null;
+let quietPolls = 0;
+
+function schedulePoll(ms) {
+  clearTimeout(pollTimer);
+  if (document.hidden) return;                 // asleep until the tab returns
+  const jitter = ms * (0.8 + Math.random() * 0.4); // spread a crowd out
+  pollTimer = setTimeout(poll, jitter);
+}
+
+// Something happened: listen closely again.
+function wake() {
+  quietPolls = 0;
+  pollDelay = POLL_FAST;
+}
+
 async function poll() {
+  let fresh = 0;
   try {
     const res = await fetch(`${API}/river?after=${cursor}&limit=60`);
-    if (!res.ok) return;
+    if (!res.ok) throw new Error(res.status);
     const data = await res.json();
     for (const p of data.pebbles) {
       if (p.ts > cursor) cursor = p.ts;
@@ -226,9 +266,44 @@ async function poll() {
       if (expiresAt(p.ts, p.skips) <= Date.now()) continue;
       queued.add(p.id);
       queue.push(p);
+      fresh++;
     }
-  } catch {}
+    if (fresh) {
+      wake();
+    } else if (++quietPolls >= 3) {
+      pollDelay = Math.min(POLL_SLOW, pollDelay * 2);
+    }
+  } catch {
+    pollDelay = Math.min(POLL_SLOW, pollDelay * 2); // back off when the river errors
+  }
+  schedulePoll(pollDelay);
 }
+
+document.addEventListener('visibilitychange', () => {
+  if (!API) return;
+  if (document.hidden) {
+    clearTimeout(pollTimer);
+  } else {
+    // Back from the background: only ask for what we missed, then resume.
+    cursor = Math.max(cursor, Date.now() - 5 * 60 * 1000);
+    wake();
+    poll();
+  }
+});
+
+// What the river says when it declines. Keyed by the worker's error
+// code, with HTTP status as a fallback.
+const REFUSALS = {
+  no_links:     'the river carries no links',
+  no_numbers:   'the river carries no numbers to call',
+  echo:         'the river has heard this one already',
+  river_closed: 'the river is resting',
+  river_busy:   'the river is running fast — try in a moment',
+  rate_limited: 'the river is full for you today',
+  429:          'the river is full for you today',
+  503:          'the river is running fast — try in a moment',
+  default:      'the river didn’t take it',
+};
 
 async function cast() {
   const body = input.value.trim();
@@ -264,23 +339,20 @@ async function cast() {
       res = await doCast();
       // A transient edge blip on a fresh subdomain can 404 a request that
       // never reached the worker at all; one silent retry papers over it.
-      if (!res.ok && res.status !== 429 && res.status !== 503) res = await doCast();
+      if (res.status === 404 || res.status >= 500) res = await doCast();
     } catch {
       res = await doCast();
     }
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (res.ok && data.id) {
       ownIds.add(data.id);
       saveSet('snd_own', ownIds);
       shown.add(data.id);
       spawn({ id: data.id, body, ts: data.ts, skips: 0 });
       note.textContent = '';
-    } else if (res.status === 429) {
-      note.textContent = 'the river is full for you today';
-    } else if (res.status === 503) {
-      note.textContent = 'the river is running fast — try in a moment';
+      wake();
     } else {
-      note.textContent = 'the river didn\u2019t take it';
+      note.textContent = REFUSALS[data.error] || REFUSALS[res.status] || REFUSALS.default;
     }
   } catch {
     note.textContent = 'the river didn\u2019t take it';
@@ -295,7 +367,6 @@ input.addEventListener('keydown', e => { if (e.key === 'Enter') cast(); });
 
 if (API) {
   poll();
-  setInterval(poll, 5000);
 } else {
   note.textContent = 'local demo — pebbles cast here sink on this device and are gone';
 }

@@ -8,10 +8,12 @@ CREATE TABLE IF NOT EXISTS pebbles (
   ts      INTEGER NOT NULL,   -- server time, ms since epoch
   device  TEXT NOT NULL,      -- opaque uuid, used only for self-skip check
   hidden  INTEGER NOT NULL DEFAULT 0,
-  source  TEXT NOT NULL DEFAULT 'human'  -- 'human' | 'ai'
+  source  TEXT NOT NULL DEFAULT 'human',  -- 'human' | 'ai'
+  fp      TEXT                -- fingerprint of the normalised body (echo check)
 );
 
 CREATE INDEX IF NOT EXISTS pebbles_ts ON pebbles (ts);
+CREATE INDEX IF NOT EXISTS pebbles_fp ON pebbles (fp, ts);
 
 CREATE TABLE IF NOT EXISTS skips (
   ref     TEXT NOT NULL,      -- pebble id
@@ -26,7 +28,10 @@ CREATE INDEX IF NOT EXISTS skips_ts ON skips (ts);
 CREATE TABLE IF NOT EXISTS actions (
   device  TEXT NOT NULL,
   kind    TEXT NOT NULL,      -- 'cast' | 'skip'
-  ts      INTEGER NOT NULL
+  ts      INTEGER NOT NULL,
+  net     TEXT                -- salted daily hash of the caller's IP, never the IP
 );
 
 CREATE INDEX IF NOT EXISTS actions_lookup ON actions (device, kind, ts);
+CREATE INDEX IF NOT EXISTS actions_net ON actions (net, kind, ts);
+CREATE INDEX IF NOT EXISTS actions_kind_ts ON actions (kind, ts);
