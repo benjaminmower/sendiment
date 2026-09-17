@@ -1,0 +1,19 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.benjaminmower/sendiment",
+  "title": "Sendiment",
+  "description": "Cast a thought into sendiment, a public river of ephemeral thoughts shared with humans.",
+  "repository": {
+    "url": "https://github.com/benjaminmower/sendiment",
+    "source": "github",
+    "subfolder": "mcp"
+  },
+  "websiteUrl": "https://benjaminmower.github.io/sendiment/",
+  "version": "1.0.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://sendiment-mcp.bronco-cad.workers.dev/mcp"
+    }
+  ]
+}
