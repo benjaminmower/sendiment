@@ -3,8 +3,8 @@
  *
  * Endpoints:
  *   POST /cast   { body, device, source? } -> { id, ts }
- *   POST /skip   { ref, device }           -> { ok: true }
- *   GET  /river?after=<ms>&limit=<n>       -> { pebbles: [...], now }
+ *   POST /skip   { ref, device, source? }  -> { ok: true }   (410 expired if already sunk)
+ *   GET  /river?after=<ms>&limit=<n>[&order=desc][&live=1] -> { pebbles: [...], now }
  *   POST /hide   { id } | { device }       -> { ok, hidden }   (needs MOD_KEY)
  *
  * Design notes:
@@ -21,12 +21,15 @@
  *    shaped so the cheap attacks stop being worth it.
  */
 
+import { expiresAt } from "../physics.js";
+
 const MAX_BODY = 280;
 const DAY = 86400000;
 const HOUR = 3600000;
 
 const CAST_LIMIT = 20;          // per device per 24h
 const SKIP_LIMIT = 200;         // per device per 24h
+const AI_SKIP_LIMIT = 20;       // per AI device per 24h (override: env.AI_SKIP_LIMIT)
 const NET_CAST_LIMIT = 60;      // per network per 24h (a household, not a person)
 const NET_SKIP_LIMIT = 600;     // per network per 24h
 const GLOBAL_CAST_PER_MIN = 60;
@@ -188,20 +191,25 @@ async function skip(request, env) {
   const device = cleanDevice(payload.device);
   const ref = typeof payload.ref === "string" ? payload.ref.replace(/[^A-Za-z0-9-]/g, "").slice(0, 64) : null;
   if (!device || !ref) return json({ error: "bad_request" }, 400);
+  const source = cleanSource(payload.source);
 
   const now = Date.now();
   const net = await netKey(request, env, now);
 
   const pebble = await env.DB.prepare(
-    "SELECT device, ts FROM pebbles WHERE id = ? AND hidden = 0"
+    `SELECT p.device, p.ts, (SELECT COUNT(*) FROM skips WHERE ref = p.id) AS skips
+     FROM pebbles p WHERE p.id = ? AND p.hidden = 0`
   ).bind(ref).first();
   if (!pebble) return json({ error: "not_found" }, 404);
   if (pebble.device === device) return json({ error: "own_pebble" }, 403);
+  // A pebble that has already sunk can't be lifted back; rows linger until the sweep.
+  if (expiresAt(pebble.ts, Math.min(pebble.skips, SKIP_CAP)) <= now) return json({ error: "expired" }, 410);
 
   if (await countGlobal(env, "skip", now - 60000) >= GLOBAL_SKIP_PER_MIN) {
     return json({ error: "river_busy" }, 503);
   }
-  if (await countDevice(env, device, "skip", now - DAY) >= SKIP_LIMIT) {
+  const skipLimit = source === "ai" ? (Number(env.AI_SKIP_LIMIT) || AI_SKIP_LIMIT) : SKIP_LIMIT;
+  if (await countDevice(env, device, "skip", now - DAY) >= skipLimit) {
     return json({ error: "rate_limited" }, 429);
   }
   if (await countNet(env, net, "skip", now - DAY) >= NET_SKIP_LIMIT) {
@@ -214,8 +222,8 @@ async function skip(request, env) {
 
   try {
     await env.DB.batch([
-      env.DB.prepare("INSERT INTO skips (ref, device, ts, net) VALUES (?, ?, ?, ?)")
-        .bind(ref, device, now, net),
+      env.DB.prepare("INSERT INTO skips (ref, device, ts, net, source) VALUES (?, ?, ?, ?, ?)")
+        .bind(ref, device, now, net, source),
       env.DB.prepare("INSERT INTO actions (device, kind, ts, net) VALUES (?, 'skip', ?, ?)")
         .bind(device, now, net),
     ]);
@@ -230,22 +238,29 @@ async function river(request, env) {
   const url = new URL(request.url);
   const after = Number(url.searchParams.get("after")) || 0;
   const limit = Math.min(Number(url.searchParams.get("limit")) || 60, 100);
+  const newestFirst = url.searchParams.get("order") === "desc";
+  const liveOnly = url.searchParams.get("live") === "1";
   const now = Date.now();
 
   // Pull recent pebbles with their skip counts. Expiry is computed client-side
   // from ts + skips; we bound the query generously and let physics decide.
   // Skips are capped here so no amount of lifting makes a pebble immortal.
+  // live=1 applies that same expiry here for callers that don't run physics
+  // (the MCP server); it scans the full page, then trims to `limit`.
   const { results } = await env.DB.prepare(`
     SELECT p.id, p.body, p.ts, p.source, MIN(COUNT(s.ref), ?) AS skips
     FROM pebbles p
     LEFT JOIN skips s ON s.ref = p.id
     WHERE p.hidden = 0 AND p.ts > ? AND p.ts > ?
     GROUP BY p.id
-    ORDER BY p.ts ASC
+    ORDER BY p.ts ${newestFirst ? "DESC" : "ASC"}
     LIMIT ?
-  `).bind(SKIP_CAP, after, now - 14 * DAY, limit).all();
+  `).bind(SKIP_CAP, after, now - 14 * DAY, liveOnly ? 100 : limit).all();
 
-  return json({ pebbles: results || [], now });
+  let pebbles = results || [];
+  if (liveOnly) pebbles = pebbles.filter((p) => expiresAt(p.ts, p.skips) > now).slice(0, limit);
+
+  return json({ pebbles, now });
 }
 
 function timingSafeEqual(a, b) {

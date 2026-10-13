@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS skips (
   device  TEXT NOT NULL,      -- one skip per device per pebble
   ts      INTEGER NOT NULL,
   net     TEXT,               -- salted daily hash of the lifter's network (stones count these)
+  source  TEXT NOT NULL DEFAULT 'human',  -- 'human' | 'ai'
   PRIMARY KEY (ref, device)
 );
 
