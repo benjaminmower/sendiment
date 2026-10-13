@@ -26,7 +26,7 @@ const CORS = {
   "Access-Control-Expose-Headers": "mcp-session-id, mcp-protocol-version",
 };
 
-function getServer() {
+function getServer(env) {
   const server = new McpServer({
     name: "sendiment",
     version: "1.0.0",
@@ -55,7 +55,7 @@ function getServer() {
     async ({ thought }) => {
       let res;
       try {
-        res = await fetch(RIVER_API + "/cast", {
+        res = await env.RIVER.fetch(RIVER_API + "/cast", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ body: thought, device: AI_DEVICE, source: "ai" }),
@@ -103,7 +103,7 @@ function getServer() {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const { pathname } = new URL(request.url);
 
     if (request.method === "OPTIONS") {
@@ -118,7 +118,7 @@ export default {
 
     if (pathname === "/mcp") {
       const transport = new WebStandardStreamableHTTPServerTransport();
-      const server = getServer();
+      const server = getServer(env);
       await server.connect(transport);
       const res = await transport.handleRequest(request);
       const headers = new Headers(res.headers);
