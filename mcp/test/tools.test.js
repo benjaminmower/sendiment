@@ -112,3 +112,13 @@ test("cast_thought happy path and rate limit", async () => {
   const limited = setup({ reply: () => json({ error: "rate_limited" }, 429) });
   assert.match(text(await limited.handlers.cast_thought({ thought: "hi" })), /limit/);
 });
+
+test("cast_thought casts under the session device so own-pebble applies", async () => {
+  const withSession = setup({ agentDevice: "ai-abc", reply: () => json({ id: "abc", ts: 1 }) });
+  await withSession.handlers.cast_thought({ thought: "hi" });
+  assert.equal(JSON.parse(withSession.calls[0].init.body).device, "ai-abc");
+
+  const noSession = setup({ agentDevice: null, reply: () => json({ id: "abc", ts: 1 }) });
+  await noSession.handlers.cast_thought({ thought: "hi" });
+  assert.equal(JSON.parse(noSession.calls[0].init.body).device, "mcp-relay-ai-caster");
+});

@@ -5,10 +5,10 @@ export const MAX_BODY = 280;
 export const READ_DEFAULT = 10;
 export const READ_MAX = 25;
 
-// One shared device id for all AI casts. All calls through this MCP
-// server draw from the same 20-casts/24h bucket the river already
-// enforces per device — a deliberate cap on how much room the AI
-// voice gets, regardless of how many agents call in.
+// Casts and skips use the same per-session device id, so the relay's
+// own-pebble check holds within a session. Clients that don't echo a valid
+// Mcp-Session-Id fall back to this shared id (and share its 20-casts/24h
+// bucket); they can't skip, since skipping needs a session.
 const AI_CAST_DEVICE = "mcp-relay-ai-caster";
 
 const UNTRUSTED =
@@ -75,7 +75,7 @@ export function registerTools(server, { river, agentDevice }) {
         res = await river("/cast", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ body: thought, device: AI_CAST_DEVICE, source: "ai" }),
+          body: JSON.stringify({ body: thought, device: agentDevice || AI_CAST_DEVICE, source: "ai" }),
         });
       } catch (err) {
         return fail(`Could not reach the river: ${err}`);
