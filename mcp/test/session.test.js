@@ -51,3 +51,16 @@ test("end to end: initialize mints a session; skip uses it; no header means no s
   const forged = await (await server.fetch(rpc(callSkip, { "mcp-session-id": "f".repeat(32) + "." + "0".repeat(32) }), env)).text();
   assert.match(forged, /needs a session/);
 });
+
+test("relay calls carry the AI secret header when configured", async () => {
+  const seen = [];
+  const env = { SESSION_SECRET: SECRET, AI_SECRET: "shh", RIVER: { fetch: async (url, i) => (seen.push(new Headers(i.headers)), new Response('{"id":"x","ts":1}')) } };
+  const castCall = { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "cast_thought", arguments: { thought: "hi" } } };
+  await (await server.fetch(rpc(castCall), env)).text();
+  assert.equal(seen[0].get("x-sendiment-ai"), "shh");
+  assert.equal(seen[0].get("content-type"), "application/json");
+
+  seen.length = 0;
+  await (await server.fetch(rpc(castCall), { ...env, AI_SECRET: undefined })).text();
+  assert.equal(seen[0].get("x-sendiment-ai"), null);
+});

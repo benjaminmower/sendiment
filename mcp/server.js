@@ -24,7 +24,14 @@ const CORS = {
 function getServer(env, agentDevice) {
   const server = new McpServer({ name: "sendiment", version: "1.1.0" });
   registerTools(server, {
-    river: (path, init) => env.RIVER.fetch(RIVER_API + path, init),
+    river: (path, init = {}) => {
+      // Proves to the relay that this call came through the MCP worker, so
+      // its `source: "ai"` label can be trusted. Set last so a tool can't
+      // override it.
+      const headers = new Headers(init.headers);
+      if (env.AI_SECRET) headers.set("x-sendiment-ai", env.AI_SECRET);
+      return env.RIVER.fetch(RIVER_API + path, { ...init, headers });
+    },
     agentDevice,
   });
   return server;
