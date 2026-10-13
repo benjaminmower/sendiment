@@ -157,10 +157,9 @@ const falling = [];
 const queue = [];
 const queued = new Set();
 const shown = new Set();
-// Start from a recent window, not the dawn of the river — a fresh
-// page load should catch up on what just happened, not replay days
-// of history at once.
-let cursor = Date.now() - 5 * 60 * 1000;
+// Start from now: a fresh page load shows nothing old, only thoughts
+// cast after it opened.
+let cursor = Date.now();
 
 function spawn(pebble) {
   const el = document.createElement('div');
