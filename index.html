@@ -196,8 +196,24 @@ function doSkip(p) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ref: p.id, device })
-    }).catch(() => {});
+    }).then(async res => {
+      // 409: the river already has this skip from us, so it stands.
+      if (res.ok || res.status === 409) return;
+      const data = await res.json().catch(() => ({}));
+      undoSkip(p, SKIP_REFUSALS[data.error] || SKIP_REFUSALS[res.status] || SKIP_REFUSALS.default);
+    }).catch(() => undoSkip(p, SKIP_REFUSALS.default));
   }
+}
+
+// The river said no: take back the optimistic lift.
+function undoSkip(p, message) {
+  skippedIds.delete(p.id); saveSet('snd_skipped', skippedIds);
+  p.skips = Math.max(0, p.skips - 1);
+  p.el.classList.remove('skipped');
+  p.el.style.transform = `scale(${sizeOf(p.skips).toFixed(2)})`;
+  p.speed = speedOf(p.skips);
+  note.textContent = message;
+  setTimeout(() => { if (note.textContent === message) note.textContent = ''; }, 4000);
 }
 
 let last = performance.now();
@@ -303,6 +319,18 @@ const REFUSALS = {
   429:          'the river is full for you today',
   503:          'the river is running fast — try in a moment',
   default:      'the river didn’t take it',
+};
+
+const SKIP_REFUSALS = {
+  expired:        'that one has already sunk',
+  not_found:      'that one is gone',
+  own_pebble:     'you can’t lift your own thought',
+  pebble_resting: 'that one has been lifted a lot — let it rest',
+  rate_limited:   'the river is full for you today',
+  river_busy:     'the river is running fast — try in a moment',
+  429:            'the river is full for you today',
+  503:            'the river is running fast — try in a moment',
+  default:        'the river didn’t take that lift',
 };
 
 async function cast() {
