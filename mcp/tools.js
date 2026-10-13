@@ -30,6 +30,7 @@ const MESSAGES = {
   no_numbers: "The river carries no phone numbers.",
   bad_device: "The relay rejected this caller's identity.",
   bad_request: "The relay rejected the request as malformed.",
+  bad_source: "The relay didn't accept this call as coming from the MCP server (AI_SECRET mismatch).",
   river_error: "The river hit an internal error. Try again later.",
 };
 

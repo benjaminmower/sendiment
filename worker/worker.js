@@ -2,7 +2,7 @@
  * Sendiment river relay.
  *
  * Endpoints:
- *   POST /cast   { body, device, source? } -> { id, ts }
+ *   POST /cast   { body, device, source? } -> { id, ts }   (source "ai" needs the x-sendiment-ai header)
  *   POST /skip   { ref, device, source? }  -> { ok: true }   (410 expired if already sunk)
  *   GET  /river?after=<ms>&limit=<n>[&order=desc][&live=1] -> { pebbles: [...], now }
  *   POST /hide   { id } | { device }       -> { ok, hidden }   (needs MOD_KEY)
@@ -97,8 +97,16 @@ function cleanDevice(d) {
   return v.length >= 8 ? v : null;
 }
 
-function cleanSource(s) {
-  return s === "ai" ? "ai" : "human";
+/**
+ * "ai" is accepted only from the MCP worker, which proves itself with the
+ * shared AI_SECRET. Returns "ai", "human", or null when "ai" was claimed
+ * without proof (including when no secret is configured: fail closed).
+ * "human" is still just the caller's word for it.
+ */
+function cleanSource(s, request, env) {
+  if (s !== "ai") return "human";
+  const sent = request.headers.get("x-sendiment-ai") || "";
+  return env.AI_SECRET && timingSafeEqual(sent, env.AI_SECRET) ? "ai" : null;
 }
 
 /** Returns { body } or { error }. */
@@ -152,7 +160,8 @@ async function cast(request, env) {
   const cleaned = cleanBody(payload.body);
   if (cleaned.error) return json({ error: cleaned.error }, 400);
   const body = cleaned.body;
-  const source = cleanSource(payload.source);
+  const source = cleanSource(payload.source, request, env);
+  if (!source) return json({ error: "bad_source" }, 403);
 
   const now = Date.now();
   const net = await netKey(request, env, now);
@@ -191,7 +200,8 @@ async function skip(request, env) {
   const device = cleanDevice(payload.device);
   const ref = typeof payload.ref === "string" ? payload.ref.replace(/[^A-Za-z0-9-]/g, "").slice(0, 64) : null;
   if (!device || !ref) return json({ error: "bad_request" }, 400);
-  const source = cleanSource(payload.source);
+  const source = cleanSource(payload.source, request, env);
+  if (!source) return json({ error: "bad_source" }, 403);
 
   const now = Date.now();
   const net = await netKey(request, env, now);

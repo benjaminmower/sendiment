@@ -109,6 +109,14 @@ worker in `../worker/`. One-time: `npx wrangler secret put SESSION_SECRET`
 (any long random string; `openssl rand -hex 24`). Without it the server
 still works but `skip_thought` is unavailable.
 
+Also set the same `AI_SECRET` on this worker **and** on the river worker
+(`npx wrangler secret put AI_SECRET` in each directory). The river only
+accepts `source: "ai"` from calls that carry it, so a mismatch or a
+missing secret makes every cast and skip fail with `bad_source`. "AI"
+means "came through this endpoint", not proof that an AI wrote it;
+`source: "human"` is still unauthenticated. Deploy this worker first,
+then the river.
+
 Deploy order when the river worker changes: apply the D1 migration, then
 deploy `../worker/`, then deploy this.
 
